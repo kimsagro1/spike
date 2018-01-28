@@ -12,7 +12,6 @@ var semanticVersionNumber = "0.0.0";
 //////////////////////////////////////////////////////////////////////
 
 #addin "nuget:https://api.nuget.org/v3/index.json?package=Cake.Figlet&version=1.0.0"
-#addin "nuget:https://api.nuget.org/v3/index.json?package=Cake.Npm&version=0.12.1"
 
 ///////////////////////////////////////////////////////////////////////////////
 // ARGUMENTS
@@ -46,6 +45,7 @@ Task("__Build")
     .IsDependentOn("__BuildSolution")
     .IsDependentOn("__RunTests")
     .IsDependentOn("__Package")
+    .IsDependentOn("__RunSemanticRelease")
     ;
 
 Task("__DumpDotnetInfo")
@@ -58,7 +58,7 @@ Task("__DumpDotnetInfo")
 Task("__Clean")
     .Does(() =>
 {
-    Information("Cleaning {0} and bin and obj folders", artifactsDir);
+    Information("Cleaning {0}, bin and obj folders", artifactsDir);
 
     CleanDirectory(artifactsDir);
     CleanDirectories("./src/**/bin");
@@ -71,27 +71,29 @@ Task("__GetNextSemanticVersionNumber")
 {
     var npxPath = Context.Tools.Resolve("npx.cmd");
 
-    IEnumerable<string> redirectedStandardOutput;
+    IEnumerable<string> semanticReleaseOutputLines;
 
     var exitCode = StartProcess(
         npxPath,
         new ProcessSettings()
             .SetRedirectStandardOutput(true)
             .WithArguments(args => args
-                .AppendSwitch("-p", "@semantic-release/git@2.0.2")
-                .AppendSwitch("-p", "semantic-release@12.2.2")
+                .AppendSwitch("-p", "semantic-release@next")
+                .AppendSwitch("-p", "@semantic-release/changelog")
                 .Append("semantic-release")
                 .Append("--dry-run")
-                .AppendSwitch("--verify-conditions", "@semantic-release/github")
-                .AppendSwitch("--get-last-release", "@semantic-release/git")
         ),
-         out redirectedStandardOutput
+        out semanticReleaseOutputLines
      );
 
-Information(string.Join(Environment.NewLine, redirectedStandardOutput));
-     if (exitCode !=0) {
-         throw new Exception(string.Join(Environment.NewLine, redirectedStandardOutput));
+    Information("{0}", string.Join(Environment.NewLine, semanticReleaseOutputLines));
+
+    if (exitCode != 0) {
+        throw new Exception($"semantic-release exited with exit code {exitCode}");
     }
+
+    semanticVersionNumber = ExtractNextSemanticVersionNumber(semanticReleaseOutputLines);
+    Information("Next semantic version number is {0}", semanticVersionNumber);
 });
 
 Task("__BuildSolution")
@@ -154,12 +156,55 @@ Task("__Package")
     }
 });
 
+Task("__RunSemanticRelease")
+   // .WithCriteria(isContinuousIntegrationBuild)
+    .Does(() =>
+{
+    var npxPath = Context.Tools.Resolve("npx.cmd");
+
+    var exitCode = StartProcess(
+        npxPath,
+        new ProcessSettings()
+            .WithArguments(args => args
+                .AppendSwitch("-p", "semantic-release@next")
+                .AppendSwitch("-p", "@semantic-release/changelog")
+                .Append("semantic-release")
+                .Append("--no-ci")
+        )
+     );
+
+    if (exitCode != 0) {
+        throw new Exception($"semantic-release exited with exit code {exitCode}");
+    }
+});
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIMARY TARGETS
 ///////////////////////////////////////////////////////////////////////////////
 
 Task("Default")
     .IsDependentOn("__Build");
+
+///////////////////////////////////////////////////////////////////////////////
+// Helpers
+///////////////////////////////////////////////////////////////////////////////
+string ExtractNextSemanticVersionNumber(IEnumerable<string> semanticReleaseOutputLines)
+{
+    var extractRegEx = new System.Text.RegularExpressions.Regex("^.+next release version is (?<SemanticVersionNumber>.*)$");
+
+    var nextSemanticVersionNumber = semanticReleaseOutputLines
+        .Select(line => extractRegEx.Match(line).Groups["SemanticVersionNumber"].Value)
+        .Where(line => !string.IsNullOrWhiteSpace(line))
+        .SingleOrDefault();
+
+    if (nextSemanticVersionNumber == null)
+    {
+        throw new Exception("Could not extract next semantic version number from semantic-release output");
+    }
+
+    return nextSemanticVersionNumber;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // EXECUTION

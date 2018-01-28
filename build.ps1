@@ -147,7 +147,6 @@ if (!(Test-Path $NUGET_EXE)) {
 
 # Save nuget.exe path to environment to be available to child processed
 $ENV:NUGET_EXE = $NUGET_EXE
-$ENV:GITHUB_TOKEN = "192f16d5fbe4ce5ac796a4283750acbe8360a3ac"
 
 # Restore tools from NuGet?
 if(-Not $SkipToolPackageRestore.IsPresent) {

@@ -3,5 +3,11 @@ module.exports = {
         '@semantic-release/changelog',
         '@semantic-release/github',
     ],
-    publish: ['@semantic-release/changelog', '@semantic-release/github'],
+    publish: [
+        '@semantic-release/changelog',
+        {
+            path: '@semantic-release/github',
+            assets: 'artifacts/**/*.nupkg',
+        },
+    ],
 }
