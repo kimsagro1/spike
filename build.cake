@@ -5,7 +5,7 @@ var projectName = "StarWarsNames";
 var artifactsDir =  Directory("./artifacts");
 
 var isLocalBuild = BuildSystem.IsLocalBuild;
-var semanticVersionNumber = "0.0.0";
+var nextSemanticVersionNumber = "0.0.0";
 
 //////////////////////////////////////////////////////////////////////
 // NUGET ADDINS AND TOOLS
@@ -71,8 +71,8 @@ Task("GetNextSemanticVersionNumber")
 {
     Information("Running semantic-release in dry run mode to extract next semantic version number");
 
-    var semanticReleaseOutput = ExecuteSemanticRelease(Context, dryRun: false);
-    var nextSemanticVersionNumber = ExtractNextSemanticVersionNumber(semanticReleaseOutput);
+    var semanticReleaseOutput = ExecuteSemanticRelease(Context, dryRun: true);
+    nextSemanticVersionNumber = ExtractNextSemanticVersionNumber(semanticReleaseOutput);
 
     Information("Next semantic version number is {0}", nextSemanticVersionNumber);
 });
@@ -83,16 +83,16 @@ Task("BuildSolution")
     var solutions = GetFiles("./src/*.sln");
     foreach(var solution in solutions)
     {
-        Information("Building solution {0}", solution.GetFilenameWithoutExtension());
+        Information("Building solution {0} v{1}", solution.GetFilenameWithoutExtension(), nextSemanticVersionNumber);
 
         DotNetCoreBuild(solution.FullPath, new DotNetCoreBuildSettings()
         {
             Configuration = configuration,
             MSBuildSettings = new DotNetCoreMSBuildSettings()
                 .WithProperty("SourceLinkCreate", "true")
-                .WithProperty("Version", $"{semanticVersionNumber}.0")
-                .WithProperty("AssemblyVersion", $"{semanticVersionNumber}.0")
-                .WithProperty("FileVersion", $"{semanticVersionNumber}.0")
+                .WithProperty("Version", $"{nextSemanticVersionNumber}.0")
+                .WithProperty("AssemblyVersion", $"{nextSemanticVersionNumber}.0")
+                .WithProperty("FileVersion", $"{nextSemanticVersionNumber}.0")
                 // 0 = use as many processes as there are available CPUs to build the project
                 // see: https://develop.cakebuild.net/api/Cake.Common.Tools.MSBuild/MSBuildSettings/60E763EA
                 .SetMaxCpuCount(0)
@@ -123,25 +123,25 @@ Task("Package")
         var projectDirectory = project.GetDirectory().FullPath;
         if(projectDirectory.EndsWith("Tests")) continue;
 
-        Information("Packaging project {0}", project.GetFilenameWithoutExtension());
+        Information("Packaging project {0} v{1}", project.GetFilenameWithoutExtension(), nextSemanticVersionNumber);
 
         DotNetCorePack(project.FullPath, new DotNetCorePackSettings {
             Configuration = configuration,
             OutputDirectory = artifactsDir,
             NoBuild = true,
             MSBuildSettings = new DotNetCoreMSBuildSettings()
-                .WithProperty("Version", $"{semanticVersionNumber}.0")
-                .WithProperty("AssemblyVersion", $"{semanticVersionNumber}.0")
-                .WithProperty("FileVersion", $"{semanticVersionNumber}.0")
+                .WithProperty("Version", $"{nextSemanticVersionNumber}.0")
+                .WithProperty("AssemblyVersion", $"{nextSemanticVersionNumber}.0")
+                .WithProperty("FileVersion", $"{nextSemanticVersionNumber}.0")
         });
     }
 });
 
 Task("RunSemanticRelease")
-   // .WithCriteria(isContinuousIntegrationBuild)
+    .WithCriteria(nextSemanticVersionNumber != null)
     .Does(() =>
 {
-
+    ExecuteSemanticRelease(Context, dryRun: false);
 });
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -175,7 +175,9 @@ string[] ExecuteSemanticRelease(ICakeContext context, bool dryRun)
             .WithArguments(args => args
                 .AppendSwitch("-p", "semantic-release@next")
                 .AppendSwitch("-p", "@semantic-release/changelog")
+                .AppendSwitch("-p", "@semantic-release/git")
                 .Append("semantic-release")
+                .Append("--no-ci")
                 .Append(dryRun ? "--dry-run" : "")
         ),
         out redirectedStandardOutput
@@ -188,7 +190,6 @@ string[] ExecuteSemanticRelease(ICakeContext context, bool dryRun)
 
     return semanticReleaseOutput;
 }
-
 string ExtractNextSemanticVersionNumber(string[] semanticReleaseOutput)
 {
     var extractRegEx = new System.Text.RegularExpressions.Regex("^.+next release version is (?<SemanticVersionNumber>.*)$");
