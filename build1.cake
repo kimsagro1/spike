@@ -69,12 +69,10 @@ Task("GetNextSemanticVersionNumber")
    // .WithCriteria(!isLocalBuild)
     .Does(() =>
 {
-    Information("Running semantic-release in dry run mode to extract next semantic version number");
-
-    var semanticReleaseOutput = ExecuteSemanticRelease(Context, dryRun: false);
-    var nextSemanticVersionNumber = ExtractNextSemanticVersionNumber(semanticReleaseOutput);
-
-    Information("Next semantic version number is {0}", nextSemanticVersionNumber);
+    var semanticReleaseOutput = ExecuteSemanticRelease(Context, dryRun := false);
+    Information("{0}", semanticReleaseOutput.Count());
+    // semanticVersionNumber = ExtractNextSemanticVersionNumber(semanticReleaseOutputLines);
+    // Information("Next semantic version number is {0}", semanticVersionNumber);
 });
 
 Task("BuildSolution")
@@ -141,7 +139,22 @@ Task("RunSemanticRelease")
    // .WithCriteria(isContinuousIntegrationBuild)
     .Does(() =>
 {
+    var npxPath = Context.Tools.Resolve("npx.cmd");
 
+    var exitCode = StartProcess(
+        npxPath,
+        new ProcessSettings()
+            .WithArguments(args => args
+                .AppendSwitch("-p", "semantic-release@next")
+                .AppendSwitch("-p", "@semantic-release/changelog")
+                .Append("semantic-release")
+                //.Append("--no-ci")
+        )
+     );
+
+    if (exitCode != 0) {
+        throw new Exception($"semantic-release exited with exit code {exitCode}");
+    }
 });
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -150,6 +163,28 @@ Task("RunSemanticRelease")
 
 Task("Default")
     .IsDependentOn("Build");
+
+///////////////////////////////////////////////////////////////////////////////
+// Helpers
+///////////////////////////////////////////////////////////////////////////////
+string ExtractNextSemanticVersionNumber(IEnumerable<string> semanticReleaseOutputLines)
+{
+    Information("{0}", semanticReleaseOutputLines.Count());
+    return "1";
+    // var extractRegEx = new System.Text.RegularExpressions.Regex("^.+next release version is (?<SemanticVersionNumber>.*)$");
+
+    // var nextSemanticVersionNumber = semanticReleaseOutputLines
+    //     .Select(line => extractRegEx.Match(line).Groups["SemanticVersionNumber"].Value)
+    //     .Where(line => !string.IsNullOrWhiteSpace(line))
+    //     .SingleOrDefault();
+
+    // if (nextSemanticVersionNumber == null)
+    // {
+    //     throw new Exception("Could not extract next semantic version number from semantic-release output");
+    // }
+
+    // return nextSemanticVersionNumber;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // EXECUTION
@@ -161,7 +196,7 @@ RunTarget(target);
 // Helpers
 ///////////////////////////////////////////////////////////////////////////////
 
-string[] ExecuteSemanticRelease(ICakeContext context, bool dryRun)
+string[] ExecuteSemanticRelease(ICakeContext context, bool dryRunMode)
 {
     var npxPath = context.Tools.Resolve("npx.cmd");
     if (npxPath == null) throw new Exception("Could not locate executable 'npm'.");
@@ -176,7 +211,7 @@ string[] ExecuteSemanticRelease(ICakeContext context, bool dryRun)
                 .AppendSwitch("-p", "semantic-release@next")
                 .AppendSwitch("-p", "@semantic-release/changelog")
                 .Append("semantic-release")
-                .Append(dryRun ? "--dry-run" : "")
+                .Append(dryRunMode ? "--dry-run" : "")
         ),
         out redirectedStandardOutput
      );
@@ -187,14 +222,4 @@ string[] ExecuteSemanticRelease(ICakeContext context, bool dryRun)
     if (exitCode != 0) throw new Exception($"Process returned an error (exit code {exitCode}).");
 
     return semanticReleaseOutput;
-}
-
-string ExtractNextSemanticVersionNumber(string[] semanticReleaseOutput)
-{
-    var extractRegEx = new System.Text.RegularExpressions.Regex("^.+next release version is (?<SemanticVersionNumber>.*)$");
-
-    return semanticReleaseOutput
-        .Select(line => extractRegEx.Match(line).Groups["SemanticVersionNumber"].Value)
-        .Where(line => !string.IsNullOrWhiteSpace(line))
-        .SingleOrDefault();
 }
